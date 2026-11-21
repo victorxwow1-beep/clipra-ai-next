@@ -69,7 +69,7 @@ function home(){
 function clipCard(c,index){
  const d=format(c.duration);
  const src=c.rendered?'<video controls playsinline preload="metadata" src="/api/clips/'+Q(c.id)+'/preview"></video>':
- '<div class="preview-empty"><span>▷</span><small>Rendering video clip…</small></div>';
+ '<div class="draft-thumb"><img loading="lazy" alt="Actual thumbnail from the original source video" src="/api/clips/'+Q(c.id)+'/thumbnail"><span>Review this real source frame · MP4 preview after render</span></div>';
  const why=c.origin==='local_speech'?'Based on original spoken words':c.origin==='local_text_evidence'?'Based on visible in-game text':c.origin==='manual'?'Your manual selection':'Source-grounded suggestion';
  return '<article class="clipcard"><div class="thumb">'+src+'</div><div class="clipdetails"><div class="clipheading"><h3>'+Q(c.title||'Clip '+(index+1))+'</h3><span>'+d+'</span></div>'+
  '<p class="hint">'+Q(why)+'</p>'+
@@ -95,7 +95,7 @@ function studio(){
  const clips=state.clips.map(clipCard).join('');
  const status=state.job?'<div class="jobstate"><strong>'+Q(state.job.kind==='smart'?'Finding highlights':state.job.kind==='render'?'Rendering MP4 clips':'Processing')+' · '+Q(state.job.status)+'</strong>'+
  '<p>'+Q(state.job.error||state.job.stage||'Working on your video')+'</p></div>':'';
- const noClips=!state.busy&&!state.clips.length?'<div class="empty"><h3>No verified clips yet</h3><p>The free model may find no strong moments. It will not create random clips just to reach your requested count.</p>'+
+ const noClips=!state.busy&&!state.clips.length?'<div class="empty"><h3>No suggested clips yet</h3><p>The free model may find no strong moments. It will not create random clips just to reach your requested count.</p>'+
  '<div class="clipactions"><button data-action="manual" class="outline">Create manual clip</button><button data-action="rerun" class="outline">Analyze again</button></div></div>':'';
  return shell('<div class="studiohead"><button data-action="home" class="ghost">← Back</button><span>Review & export</span></div>'+
  '<div class="vidinfo"><div class="vidmeta"><h1>'+Q(m.filename)+'</h1><small>'+format(m.duration)+' · '+m.width+' × '+m.height+' · '+size(m.size)+'</small></div>'+

@@ -68,8 +68,10 @@ function home(){
 }
 function clipCard(c,index){
  const d=format(c.duration);
- const src=c.rendered?'<video controls playsinline preload="metadata" src="/api/clips/'+Q(c.id)+'/preview"></video>':
- '<div class="preview-empty"><span>▷</span><small>Rendering video clip…</small></div>';
+ const frame='/api/clips/'+Q(c.id)+'/thumbnail';
+ const src=c.rendered?'<video controls playsinline preload="metadata" poster="'+frame+'" src="/api/clips/'+Q(c.id)+'/preview"></video>':
+ '<div class="preview-still"><img src="'+frame+'" alt="Actual frame from selected video moment" loading="lazy">'+
+ '<span>Source frame · render MP4 to play</span></div>';
  const why=c.origin==='local_speech'?'Based on original spoken words':c.origin==='local_text_evidence'?'Based on visible in-game text':c.origin==='manual'?'Your manual selection':'Source-grounded suggestion';
  return '<article class="clipcard"><div class="thumb">'+src+'</div><div class="clipdetails"><div class="clipheading"><h3>'+Q(c.title||'Clip '+(index+1))+'</h3><span>'+d+'</span></div>'+
  '<p class="hint">'+Q(why)+'</p>'+

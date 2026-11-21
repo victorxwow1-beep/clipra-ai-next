@@ -11,6 +11,9 @@ from sqlalchemy import select,update,or_
 from .db import Session, init_db
 from .models import Job,Media,Clip
 from .ai import analyze_video, AIUnavailable
+from .signals import discover_signals
+from .freecuts import propose_drafts
+from .youtube_source import download_authorized_youtube, YouTubeImportError
 from .render import render_clip,RenderCancelled
 
 ROOT=Path(os.getenv('MEDIA_ROOT','/tmp/clipra-next-media'))
@@ -23,7 +26,7 @@ def run_one(job_id):
             job.status='cancelled';s.commit();return
         media=s.get(Media,job.media_id)
         clip=s.get(Clip,job.clip_id) if job.clip_id else None
-        job.stage='analyzing audiovisual content' if job.kind=='analyze' else 'encoding original video'
+        job.stage={'analyze':'analyzing audiovisual content','suggest':'scanning original locally','youtube_import':'importing authorized YouTube source','render':'encoding original video'}.get(job.kind,'starting')
         job.heartbeat=datetime.now(timezone.utc);s.commit()
         try:
             if job.kind=='analyze':
@@ -35,6 +38,39 @@ def run_one(job_id):
                            origin='gemini_ai',reasoning=m['reason']+' | Evidence: '+str(m['evidence']),confidence=m['confidence'])
                     s.add(c)
                 job.settings={**settings,'usage':usage,'candidate_count':len(found)}
+            elif job.kind=='suggest':
+                settings=job.settings or {}
+                suggestions=propose_drafts(
+                    media.duration,
+                    discover_signals(Path(media.source_path), media.duration, max_events=64),
+                    max_clips=int(settings.get('max_clips',4)),
+                    clip_length=float(settings.get('clip_length',22.0)),
+                )
+                for moment in suggestions:
+                    s.add(Clip(
+                        media_id=media.id, title=moment['title'],
+                        segments=[{'start':moment['start'],'end':moment['end']}],
+                        origin='signal_draft', confidence=None,
+                        reasoning=moment['reason'],
+                        options={'ratio':'9:16','mode':'fit','crf':20},
+                    ))
+                job.settings={**settings,'candidate_count':len(suggestions),'selection':'local_audiovisual_drafts_not_semantic_ai'}
+            elif job.kind=='youtube_import':
+                settings=job.settings or {}
+                if not settings.get('rights_confirmed'):
+                    raise YouTubeImportError('Rights confirmation required before YouTube import')
+                result=download_authorized_youtube(settings['video_id'], ROOT)
+                media.source_path=str(result['path'])
+                media.filename=result['filename']
+                media.sha256=result['sha256']
+                media.size=result['size']
+                media.duration=result['duration']
+                media.width=result['width']
+                media.height=result['height']
+                media.fps=result['fps']
+                media.has_audio=result['has_audio']
+                media.youtube_url=result['youtube_url']
+                job.settings={**settings,'source_status':result['source_status']}
             elif job.kind=='render':
                 if not clip:raise ValueError('Clip not found')
                 out=ROOT/'exports'/f'{clip.id}.mp4'
@@ -67,7 +103,7 @@ def run_one(job_id):
         except Exception as e:
             s.rollback()
             job=s.get(Job,job_id)
-            job.status='blocked' if isinstance(e,AIUnavailable) else 'failed'
+            job.status='blocked' if isinstance(e,(AIUnavailable,YouTubeImportError)) else 'failed'
             job.error=str(e)[:1000]
             job.stage='blocked' if job.status=='blocked' else 'failed'
             s.commit()

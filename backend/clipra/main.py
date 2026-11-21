@@ -4,6 +4,7 @@ import hmac
 import fcntl
 import hashlib
 import tempfile
+import subprocess
 from zipfile import ZipFile, ZIP_STORED
 from starlette.background import BackgroundTask
 from importlib.util import find_spec
@@ -399,6 +400,33 @@ def download(id:str,user=Depends(auth)):
         c=get_clip(s,id)
         if not c.output_path or not Path(c.output_path).exists():raise HTTPException(409,'Clip has not been rendered')
         return FileResponse(c.output_path,filename=f'clipra-{id[:8]}.mp4',media_type='video/mp4')
+@app.get('/api/clips/{id}/thumbnail')
+def clip_thumbnail(id:str,user=Depends(auth)):
+    """Small real source frame so users can review clip candidates before render."""
+    with Session() as s:
+        c=get_clip(s,id)
+        m=get_media(s,c.media_id)
+        if not c.segments or not Path(m.source_path).is_file():
+            raise HTTPException(409,'Original clip source missing')
+        start=float(c.segments[0]['start'])
+        end=float(c.segments[0]['end'])
+        point=max(0.,min(m.duration-.12,start+min(2.0,max(.1,(end-start)*.2))))
+        source=m.source_path
+    command=['ffmpeg','-hide_banner','-nostdin','-loglevel','error',
+             '-ss',f'{point:.3f}','-protocol_whitelist','file,pipe',
+             '-i',source,'-frames:v','1','-vf',
+             'scale=w=480:h=270:force_original_aspect_ratio=decrease',
+             '-q:v','5','-f','image2pipe','-vcodec','mjpeg','pipe:1']
+    try:
+        frame=subprocess.run(command,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
+                             timeout=20,check=False)
+    except subprocess.TimeoutExpired:
+        raise HTTPException(504,'Thumbnail timed out; preview the original clip')
+    if frame.returncode or not frame.stdout or len(frame.stdout)>2*1024*1024:
+        raise HTTPException(422,'This clip frame could not be decoded')
+    return Response(content=frame.stdout,media_type='image/jpeg',
+                    headers={'Content-Disposition':'inline'})
+
 @app.get('/api/clips/{id}/preview')
 def preview(id:str,user=Depends(auth)):
     with Session() as s:

@@ -1,0 +1,43 @@
+name: CLIPRA real video pipeline QA
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install media decoder and backend dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+          python -m pip install -r backend/requirements.txt 'alembic>=1.14,<2'
+      - name: Real FFmpeg tests, resumable upload, Gemini mocked protocol
+        run: PYTHONPATH=backend python -m pytest backend/tests -q
+      - name: Check no private secrets committed
+        run: |
+          if git ls-files | grep -E '(^|/)(\.env|id_rsa|service-account\.json)$'; then
+            echo 'Private file accidentally tracked' >&2
+            exit 1
+          fi
+          echo 'No known private credential filenames tracked'
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install dependencies
+        working-directory: frontend
+        run: npm install --no-audit --no-fund
+      - name: Build Next.js client
+        working-directory: frontend
+        run: npm run build

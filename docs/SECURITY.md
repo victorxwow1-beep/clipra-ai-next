@@ -1,0 +1,7 @@
+# Security notes and limitations
+
+Implemented: generated immutable source filenames; server-side upload sizes, byte offsets, ownership checkbox, SHA-256 integrity, video stream inspection, FFmpeg protocol allowlists, no unauthorized YouTube downloads, HttpOnly SameSite session cookie, password verification, configurable secure cookie and allowed origins, controlled worker render commands without shell interpolation, no credential values in user-facing provider inspection, no paid AI by default, per-job external analysis consent, worker route separation, no-network input protocol filters, backend Docker non-root and cap-drop template.
+
+Not yet production hardened: user account system, tenant-level access control, dedicated file-scanner sandbox, privilege-separated media inspection, admission-control/quotas, authentication brute force protection, cloud secret manager installation, encrypted private object storage, strong anti-SSRF for general external URLs (general URLs are NOT fetched), hard per-job cost estimates, audited deletion/retention, signed storage URLs, security scanning, full worker kill/restart tests, automatic media cleanup, upload expiry, CSRF comprehensive testing, container build testing, and independent security audit.
+
+Do not deploy to public internet before closing these gaps. Do not upload highly sensitive videos to an AI service until its data-handling and retention policy have been assessed and consent is informed.

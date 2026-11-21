@@ -1,0 +1,1 @@
+"""CLIPRA AI NEXT video pipeline, independent of archived projects."""

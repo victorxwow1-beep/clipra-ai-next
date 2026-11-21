@@ -39,7 +39,9 @@ jobs:
         working-directory: frontend
         run: npm install --no-audit --no-fund
       - name: Validate first-party web editor JavaScript
-        run: node --check backend/clipra/site/app.js
+        run: |
+          node --check backend/clipra/site/app.js
+          node --check backend/clipra/site/app-v5.js
       - name: Build Next.js client
         working-directory: frontend
         run: npm run build

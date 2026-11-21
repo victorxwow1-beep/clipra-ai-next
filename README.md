@@ -22,7 +22,7 @@ See [`docs/BUILD_PROGRESS_2026-11-21.md`](docs/BUILD_PROGRESS_2026-11-21.md) for
 
 ## GitHub/Render handoff (November 21 follow-up)
 
-GitHub plugin connection is now **verified** for user `victorxwow1-beep`, but there are **zero accessible repositories** and the plugin does not support creating a repository. A new private repo must be created on GitHub before the source can be pushed through the connector. Render has no services yet, and the free web-service filesystem is ephemeral. See [`docs/GITHUB_RENDER_HANDOFF_2026-11-21.md`](docs/GITHUB_RENDER_HANDOFF_2026-11-21.md).
+GitHub repository [`victorxwow1-beep/clipra-ai-next`](https://github.com/victorxwow1-beep/clipra-ai-next) is now published with the independent source. The connected Render free deployment attempt returned **HTTP 402: payment information required**; no service was created and no payment was made. No public live URL is verified. The temporary single-host Docker configuration is evaluation-only: media and SQLite are not durable and real Gemini video analysis is unverified. See [`docs/GITHUB_RENDER_HANDOFF_2026-11-21.md`](docs/GITHUB_RENDER_HANDOFF_2026-11-21.md).
 
 This release adds GitHub Actions FFmpeg+Next CI and fixes concurrent edit/render conflicts and late-cancellation cleanup. **22 local backend tests pass.** AI inference and live website remain unverified until real provider credentials and deployment are available.
 

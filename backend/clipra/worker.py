@@ -93,10 +93,20 @@ def run_one(job_id):
                     ocr,details=analyze_hud_video(source,media.duration,cues,
                                 max_clips=max_clips,clip_length=min(60,clip_length),
                                 max_frames=int(os.getenv('MAX_LOCAL_EVIDENCE_FRAMES','45')))
+                    if clip_length>60:
+                        # A custom longer output must not silently become a 60s clip.
+                        # Event time stays inside the proposed edit; the user still
+                        # reviews context before accepting a long-form highlight.
+                        desired=min(media.duration,clip_length)
+                        for item in ocr:
+                            anchor=float(item['event_time'])
+                            begin=max(0.,min(media.duration-desired,anchor-desired*.65))
+                            item['start']=round(begin,3)
+                            item['end']=round(begin+desired,3)
                     found.extend(ocr);analyses.append(details)
                 # Spoken content requires actual local speech recognition (MIT-licensed
                 # faster-whisper). It is not fabricated from motion or screen text.
-                if category in ('podcast','education','livestream') or (category=='auto' and not found):
+                if media.has_audio and (category in ('podcast','education','livestream') or (category=='auto' and not found)):
                     speech,details=transcribe_local(source,media.duration,max_clips=max_clips,
                                              clip_length=clip_length,category=category)
                     found.extend(speech);analyses.append(details)
@@ -112,7 +122,19 @@ def run_one(job_id):
                         continue
                     accepted.append(item)
                     if len(accepted)>=max_clips:break
+                existing=list(s.scalars(select(Clip).where(
+                    Clip.media_id==media.id,
+                    Clip.origin.in_(['local_text_evidence','local_speech']))))
+                created=0
                 for item in accepted:
+                    # Finding clips again must not flood the user's library with
+                    # the same auto-selected source interval.
+                    if any(max(0,min(item['end'],ex.segments[0]['end'])
+                               -max(item['start'],ex.segments[0]['start']))
+                           > .7*min(item['end']-item['start'],
+                                    ex.segments[0]['end']-ex.segments[0]['start'])
+                           for ex in existing if ex.segments):
+                        continue
                     s.add(Clip(
                         media_id=media.id,title=item['title'],
                         segments=[{'start':item['start'],'end':item['end']}],
@@ -122,7 +144,8 @@ def run_one(job_id):
                             'ratio':settings.get('ratio','9:16'),
                             'mode':settings.get('mode','fit'),
                             'crf':int(settings.get('crf',18))}))
-                job.settings={**settings,'candidate_count':len(accepted),
+                    created+=1
+                job.settings={**settings,'candidate_count':created,
                     'analyses':analyses,'analysis_scope':'verified_visible_HUD_or_real_speech_only',
                     'multimodal_vision_model':'not_configured',
                     'note':'Clip quality requires human review; no fake semantic certainty.'}

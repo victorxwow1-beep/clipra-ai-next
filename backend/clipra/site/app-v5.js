@@ -211,11 +211,26 @@ async function renderAll(silent=false){
  if(!state.selected)throw Error('No video selected.');
  const remaining=state.clips.filter(c=>!c.rendered);
  if(!remaining.length){state.busy=false;paint();return}
- state.busy=true;state.statusText='Creating downloadable MP4 clips…';if(!silent)clearError();paint();
- let last=null;
- for(const c of remaining)last=await api('/clips/'+c.id+'/render',{method:'POST'});
- if(last)await monitorJob(last);
- await refreshMedia();state.busy=false;state.statusText='';paint();
+ state.busy=true;
+ if(!silent)clearError();
+ const failures=[];
+ for(let i=0;i<remaining.length;i++){
+  const clip=remaining[i];
+  state.statusText='Rendering clip '+(i+1)+' of '+remaining.length+'…';
+  paint();
+  try{
+   const job=await api('/clips/'+clip.id+'/render',{method:'POST'});
+   await monitorJob(job);
+  }catch(e){failures.push((clip.title||'Clip '+(i+1))+': '+String(e.message||e));}
+  await refreshMedia();
+ }
+ state.busy=false;state.statusText='';paint();
+ if(failures.length){
+  // Show partial success and a retry action rather than hiding earlier failures
+  // just because the last queued export succeeded.
+  state.error=failures.length+' of '+remaining.length+' renders failed. '+failures.slice(0,2).join(' | ');
+  paint();
+ }
 }
 async function renderOne(id){state.busy=true;state.statusText='Rendering selected clip…';paint();await monitorJob(await api('/clips/'+id+'/render',{method:'POST'}));await refreshMedia();state.busy=false;paint()}
 async function editClip(id){const c=state.clips.find(x=>x.id===id);if(!c)return;state.editing=id;state.editTitle=c.title;state.editSegments=c.segments.map(s=>({...s}));paint();document.querySelector('.editpanel')?.scrollIntoView({block:'start',behavior:'smooth'})}

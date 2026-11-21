@@ -106,15 +106,16 @@ def check_qa_mode(playwright, browser_name:str, source:Path, screenshots:Path, *
             page.get_by_role("button",name="Reject").click()
             page.get_by_text("No verified clips yet").wait_for(timeout=10000)
             print(browser_name,"real clip+ZIP verified; canPlay H.264:",codec["canPlay"])
-        else:
-            page.locator("#count").select_option("custom")
-            page.locator("#customCount").fill("7")
-            page.locator("#length").select_option("custom")
-            page.locator("#customMinutes").fill("1")
-            page.locator("#customSeconds").fill("15")
-            assert page.locator("#customSeconds").input_value()=="15"
-            page.screenshot(path=str(screenshots/(browser_name+"-custom-options.png")),full_page=True)
-            print(browser_name,"mobile input UX verified; no rendering claimed")
+            page.get_by_role("button",name="← Back").click()
+            page.get_by_text("Turn videos into clips.").wait_for(timeout=15000)
+        page.locator("#count").select_option("custom")
+        page.locator("#customCount").fill("7")
+        page.locator("#length").select_option("custom")
+        page.locator("#customMinutes").fill("1")
+        page.locator("#customSeconds").fill("15")
+        assert page.locator("#customSeconds").input_value()=="15"
+        page.screenshot(path=str(screenshots/(browser_name+"-custom-options.png")),full_page=True)
+        print(browser_name,"custom mobile clip controls verified")
         context.close()
     finally:browser.close()
 
@@ -143,7 +144,7 @@ def main():
             screenshots=ROOT/"qa-browser-artifacts"
             with sync_playwright() as pw:
                 check_qa_mode(pw,"chromium",source,screenshots,full_pipeline=True)
-                check_qa_mode(pw,"webkit",source,screenshots,full_pipeline=False)
+                check_qa_mode(pw,"webkit",source,screenshots,full_pipeline=True)
         finally:
             for p in (worker_proc,api_proc):
                 if p and p.poll() is None:

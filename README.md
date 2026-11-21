@@ -84,3 +84,6 @@ A newly encoded, **68.686 MiB** (not padded) H.264/AAC synthetic video passed th
 ## Temporary single-host evaluation (new)
 
 The root `Dockerfile` and `deploy/start.sh` can run the first-party FastAPI website and a separate FFmpeg worker process in a **single** evaluation container, for a low-cost proof of public URL deployment. This is not a durable production architecture: the host filesystem may be wiped after restart, and no real Gemini credentials or authorized YouTube video media retrieval are configured. Read `deploy/EVALUATION_ONLY.md` before using.
+## Public evaluation website (21 November 2026)
+
+**Railway deployment reached SUCCESS:** https://clipra-studio-production.up.railway.app (public HTTPS routing and internal healthcheck verified). This is a temporary **evaluation**, not a production release: SQLite/media storage is ephemeral; automated Gemini highlight editing remains unverified and disabled; YouTube links alone do not produce downloadable videos. See [live deployment status](docs/LIVE_DEPLOYMENT_STATUS.md).

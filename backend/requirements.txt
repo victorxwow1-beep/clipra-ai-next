@@ -9,3 +9,5 @@ pytest>=8,<10
 
 numpy>=2.0,<3
 yt-dlp>=2025.1,<2028
+# MIT-licensed on-device speech recognition; models use CPU INT8 (no paid AI API).
+faster-whisper>=1.1,<2

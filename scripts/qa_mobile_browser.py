@@ -79,9 +79,9 @@ def check_qa_mode(playwright, browser_name:str, source:Path, screenshots:Path, *
         page.screenshot(path=str(screenshots/(browser_name+"-home.png")),full_page=True)
         if full_pipeline:
             page.get_by_role("button",name=re.compile("Find Best Clips")).click()
-            page.locator(".clipcard video").wait_for(state="attached",timeout=240000)
+            page.locator('.clipcard video[src*="/preview"]').wait_for(state="attached",timeout=240000)
             page.screenshot(path=str(screenshots/(browser_name+"-clips.png")),full_page=True)
-            preview=page.locator(".clipcard video").first
+            preview=page.locator('.clipcard video[src*="/preview"]').first
             preview.wait_for()
             # Browser availability is distinct from physical phone codec playback.
             codec=page.evaluate('''() => ({
@@ -106,7 +106,10 @@ def check_qa_mode(playwright, browser_name:str, source:Path, screenshots:Path, *
             page.get_by_role("button",name="Reject").click()
             page.get_by_text("No verified clips yet").wait_for(timeout=10000)
             print(browser_name,"real clip+ZIP verified; canPlay H.264:",codec["canPlay"])
-        else:
+            page.get_by_role("button",name="← Back").click()
+            page.get_by_text("Turn videos into clips.").wait_for(timeout=15000)
+            assert page.locator("#count").count()==1
+        if True:
             page.locator("#count").select_option("custom")
             page.locator("#customCount").fill("7")
             page.locator("#length").select_option("custom")
@@ -143,7 +146,7 @@ def main():
             screenshots=ROOT/"qa-browser-artifacts"
             with sync_playwright() as pw:
                 check_qa_mode(pw,"chromium",source,screenshots,full_pipeline=True)
-                check_qa_mode(pw,"webkit",source,screenshots,full_pipeline=False)
+                check_qa_mode(pw,"webkit",source,screenshots,full_pipeline=True)
         finally:
             for p in (worker_proc,api_proc):
                 if p and p.poll() is None:

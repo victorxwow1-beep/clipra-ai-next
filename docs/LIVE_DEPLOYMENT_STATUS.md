@@ -1,32 +1,38 @@
-# CLIPRA AI NEXT — Live launch status (21 November 2026)
+# CLIPRA AI NEXT — Deployment and feature status (21 November 2026)
 
-## Published source: VERIFIED
+## Railway-hosted evaluation: VERIFIED DEPLOYED (not production certified)
 
-GitHub: https://github.com/victorxwow1-beep/clipra-ai-next
-
-This repository contains a genuine FastAPI video-upload service, FFmpeg video renderer, separate worker, responsive first-party website, Next.js source, opt-in Gemini adapter and tests. Tests are local and **do not** prove a public deployment.
-
-## Live hosting: BLOCKED
-
-A Render **Free** Docker web-service creation was attempted with the user's authorization. Render returned HTTP 402, requiring payment information. No service was created, no charge was authorized or made, and no live URL exists. Do not put secrets into chat or public GitHub files. A suitable account/host with free or approved compute access is needed before deployment.
+- Public domain: https://clipra-studio-production.up.railway.app
+- Railway project: `fab86bcf-8c3f-4d4e-998d-f6fa2f9d9f03`
+- Railway service: `b1112995-08a7-4480-aae0-ecc4705bd58b`
+- Deployment: `89a20350-6852-42af-8da7-286f51bb0490` — terminal status **SUCCESS**.
+- Runtime: Alembic migration succeeded, Uvicorn started, Railway internal `GET /health` returned 200 OK.
+- Public routing: an external HTTPS POST to `/health` reached the app and returned the expected 405 Method Not Allowed (the health endpoint is GET-only). Full public browser walkthrough and real hosted MP4 export remain **unverified**.
+- Auth: high-entropy owner password configured in Railway secrets; **not committed to GitHub**.
+- Plan: newly created Railway account with Free Trial credit. No paid plan was deliberately activated. Usage can consume the limited free credits.
+- WARNING: SQLite and originals/exports are on the temporary container filesystem. On host restart, redeploy, or sleep, media and DB may be deleted. Preserve your originals elsewhere. Do not use with irreplaceable or confidential media.
 
 ## Feature truth table
 
 | Capability | Status |
 | --- | --- |
-| Gallery / Files upload, resumable and checksum verification | Locally verified with real ~68.7 MiB video |
-| Manual clips generated from source by FFmpeg | Locally verified, decoded playable H.264/AAC MP4 |
-| Browser shell and backend API integration | Locally tested; public browser deployment pending |
-| Automatic multimodal highlight discovery | Gemini REST adapter written and contract-mocked; **not real-inference verified** |
-| YouTube links | Metadata check and authorized original-file association only; YouTube link alone does **not** produce MP4 |
-| Livestreams / multi-hour / 24-hour videos | Not end-to-end verified |
-| Durable multi-user hosting | Not implemented |
-| iPhone physical-device full upload/save | Not verified |
+| Gallery / Files resumable upload | Locally VERIFIED with real 68.7 MiB video |
+| Manual video clipping with FFmpeg | Locally VERIFIED: H.264/AAC playable MP4 |
+| Hosting of website + API + worker | Railway deployment SUCCESS, runtime health passed |
+| Public site and external routing | HTTPS public domain reached app; full browser workflow pending |
+| Automatic Gemini-selected clips | Adapter IMPLEMENTED; real model inference NOT VERIFIED; external AI disabled |
+| YouTube reference association | IMPLEMENTED, but link alone does NOT deliver authorized source bytes or MP4 |
+| YouTube link-to-MP4 | NOT IMPLEMENTED |
+| Durable production-grade media storage | NOT IMPLEMENTED |
+| Multi-hour/livestream 24-hour workload | NOT VERIFIED |
+| Physical iPhone Safari upload/save | NOT VERIFIED |
 
-## What remains
+## Next engineering priorities
 
-Connect a deployment account that allows building a Docker container with FFmpeg and an authorized durable media store. Before sharing any public URL, verify backend readiness, worker health, authenticated upload, full MP4 export/download, and user data retention. Real Gemini credentials need secure hosting secrets and informed user consent; per-job spend limits must be configured. Do not conflate an AI API model response with source-video media delivery.
+1. Test authenticated real public upload → FFmpeg render → browser MP4 playback/download.
+2. Fix any hosted upload/worker failures with deployment logs.
+3. Implement secure durable storage and backup retention controls (requires resource cost approval before provisioning).
+4. Verify real Gemini video-capable API credential and editorial quality using consented original media; limit usage/cost per job.
+5. Implement legitimate authorized YouTube media ingestion; do not confuse metadata/understanding with downloadable bytes.
 
-## Security
-
-No private keys, production password, uploaded media or credentials should ever be committed to GitHub. On ephemeral evaluation hosts, uploads and exports can disappear on restart or idle suspension. Use original-file copies only.
+**Do not call this a finished OpusClip competitor or production-safe system.** Existing Higgsfield project remains untouched.

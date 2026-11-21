@@ -153,6 +153,7 @@ async function startSmart(){
  if(state.clips.length){await renderAll(true)}
 }
 async function uploadFile(){
+ state.uploadPercent=0;paint();
  const f=state.sourceFile;
  if(!f)throw Error('Choose a video from your phone first.');
  const key='clipra-upload:'+f.name+':'+f.size+':'+f.lastModified;

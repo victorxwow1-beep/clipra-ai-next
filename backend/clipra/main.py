@@ -342,9 +342,9 @@ def youtube(body:YoutubeRequest,req:Request,user=Depends(auth)):
     check_origin(req)
     video_id,canonical=youtube_reference(body.url)
     return {'video_id':video_id,'reference':canonical,
-            'status':'requires_authorized_original','media_bytes_available':False,
-            'ai_url_understanding':'documented_preview_provider_capability_not_verified_on_this_account',
-            'message':'Google documents YouTube URL video understanding, but it does not supply MP4 source bytes. Attach a creator-owned original to export actual clips.'}
+            'status':'can_attempt_authorized_import','media_bytes_available':False,
+            'ai_url_understanding':'not_needed_for_free_ffmpeg_pipeline',
+            'message':'Valid YouTube link. Use Import video to attempt free server-side download of a public authorized original or bounded livestream section. Some cloud hosts cannot retrieve YouTube media.'}
 
 @app.post('/api/youtube/import',status_code=202)
 def import_authorized_youtube(body:YoutubeLinkRequest,req:Request,user=Depends(auth)):

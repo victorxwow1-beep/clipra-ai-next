@@ -46,6 +46,8 @@ def test_free_suggest_does_not_require_external_ai_consent(client, source):
         json={"max_clips": 1, "length_seconds": 22},
     )
     assert result.status_code == 202
+    # Keep the shared test database queue empty for the next test.
+    assert client.post(f"/api/jobs/{result.json()['id']}/cancel").status_code == 200
 
 
 def test_youtube_import_requires_rights_and_valid_host(client):

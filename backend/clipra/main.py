@@ -3,6 +3,10 @@ import re
 import hmac
 import fcntl
 import hashlib
+import tempfile
+from zipfile import ZipFile, ZIP_STORED
+from starlette.background import BackgroundTask
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse, parse_qs
@@ -53,6 +57,14 @@ class UploadCreate(BaseModel):
     size:int=Field(gt=0)
     sha256:str|None=None
     rights_confirmed:bool
+class SmartRequest(BaseModel):
+    category:Literal['auto','gaming','podcast','funny','education','livestream']='auto'
+    max_clips:int=Field(default=5,ge=1,le=12)
+    length_seconds:float=Field(default=24.0,ge=5.0,le=1800.0)
+    ratio:Literal['original','9:16','16:9','4:3','3:4','1:1']='9:16'
+    mode:Literal['fit','fill']='fit'
+    crf:int=Field(default=18,ge=16,le=28)
+
 class EvidenceRequest(BaseModel):
     max_clips:int=Field(default=4,ge=1,le=12)
     length_seconds:float=Field(default=22.0,ge=10.0,le=60.0)
@@ -128,7 +140,7 @@ def logout(response:Response,req:Request,user=Depends(auth)):
 def me(user=Depends(auth)):return {'user':'owner'}
 @app.get('/api/providers')
 def providers(user=Depends(auth)):
-    return {'free_local':{'configured':True,'video_ai':False,'selection':'audio_visual_activity_drafts'},'local_evidence':{'configured':True,'video_ai':False,'engine':'ffmpeg_tesseract_hud_ocr','scope':'visible_hud_text_only'},'gemini':{'configured':bool(os.getenv('GEMINI_API_KEY')),'outbound_enabled':os.getenv('ALLOW_EXTERNAL_AI')=='true',
+    return {'free_local':{'configured':True,'video_ai':False,'selection':'audio_visual_activity_drafts'},'local_evidence':{'configured':True,'video_ai':False,'engine':'ffmpeg_tesseract_hud_ocr','scope':'visible_hud_text_only'},'local_speech':{'installed':find_spec('faster_whisper') is not None,'model':os.getenv('LOCAL_WHISPER_MODEL','tiny'),'ready':'not_verified_until_real_local_audio_inference'},'local_vision':{'installed':False,'model':'Qwen3-VL not hosted on current server','status':'requires_open_source_model_compute'},'gemini':{'configured':bool(os.getenv('GEMINI_API_KEY')),'outbound_enabled':os.getenv('ALLOW_EXTERNAL_AI')=='true',
             'model':os.getenv('GEMINI_VIDEO_MODEL','gemini-3.5-flash'),'video_verification':'not_verified_until_real_request'},
             'aggregate':{'configured':bool(os.getenv('AGGREGATOR_API_KEY')),'provider':os.getenv('AGGREGATOR_PROVIDER','unknown'),
              'video_verification':'not_implemented'},
@@ -226,6 +238,30 @@ def stream_media(id:str,user=Depends(auth)):
         mt={'.mov':'video/quicktime','.webm':'video/webm','.mkv':'video/x-matroska','.avi':'video/x-msvideo'}.get(Path(m.filename).suffix.lower(),'video/mp4')
         return FileResponse(m.source_path,media_type=mt,filename=m.filename,content_disposition_type='inline')
 
+@app.post('/api/media/{id}/smart',status_code=202)
+def smart_find_best_clips(id:str,body:SmartRequest,req:Request,user=Depends(auth)):
+    """No API credits: source-grounded HUD or actual locally transcribed speech."""
+    check_origin(req)
+    if body.category=='funny':
+        raise HTTPException(503,
+            'Full funny-moment visual understanding is not configured on this server. '
+            'An open-source vision model with sufficient computing resources is required.')
+    with Session() as s:
+        m=get_media(s,id)
+        if m.duration<=0 or not Path(m.source_path).is_file():
+            raise HTTPException(409,'Original file is unavailable. Re-upload your recording.')
+        if body.category in ('podcast','education') and not m.has_audio:
+            raise HTTPException(422,'This source has no audio for speech understanding')
+        existing=s.scalar(select(Job).where(Job.media_id==id,Job.kind=='smart',
+                   Job.status.in_(['queued','running'])).limit(1))
+        if existing:return job_view(existing)
+        j=Job(kind='smart',media_id=m.id,settings={
+            'category':body.category,'max_clips':body.max_clips,
+            'clip_length':body.length_seconds,'ratio':body.ratio,
+            'mode':body.mode,'crf':body.crf})
+        s.add(j);s.commit()
+        return job_view(j)
+
 @app.post('/api/media/{id}/evidence',status_code=202)
 def find_visible_game_events(id:str,body:EvidenceRequest,req:Request,user=Depends(auth)):
     """Strictly source-evidenced free local HUD text detection; zero clips is valid."""
@@ -305,6 +341,49 @@ def update_clip(id:str,body:ClipRequest,req:Request,user=Depends(auth)):
         if c.output_path and Path(c.output_path).exists():Path(c.output_path).unlink()
         c.title=body.title;c.segments=segments;c.output_path=None;c.options={'ratio':body.ratio,'mode':body.mode,'crf':body.crf}
         s.commit();return clip_view(c)
+@app.delete('/api/clips/{id}',status_code=204)
+def reject_clip(id:str,req:Request,user=Depends(auth)):
+    check_origin(req)
+    with Session() as s:
+        c=get_clip(s,id)
+        busy=s.scalar(select(Job.id).where(Job.clip_id==id,
+                      Job.status.in_(['queued','running'])).limit(1))
+        if busy:raise HTTPException(409,'Finish or cancel this clip render first')
+        # Historic render jobs hold nullable foreign keys. Sever only their
+        # association, preserving the status audit trail.
+        for j in s.scalars(select(Job).where(Job.clip_id==id)):
+            j.clip_id=None
+        output=Path(c.output_path) if c.output_path else None
+        s.delete(c);s.commit()
+        if output and output.is_relative_to(ROOT/'exports'):
+            output.unlink(missing_ok=True)
+        return Response(status_code=204)
+
+@app.get('/api/media/{id}/download-all')
+def download_all_clips(id:str,user=Depends(auth)):
+    with Session() as s:
+        get_media(s,id)
+        items=list(s.scalars(select(Clip).where(Clip.media_id==id).order_by(Clip.created_at)))
+        if not items:raise HTTPException(404,'No clips exist for this video')
+        pending=[c.id for c in items if not c.output_path or not Path(c.output_path).is_file()]
+        if pending:raise HTTPException(409,'Render every accepted clip before Download All')
+        if len(items)>30:raise HTTPException(413,'Export up to 30 clips at once')
+        # ZIP_STORED avoids wasting CPU and memory trying to recompress MP4.
+        archive_dir=ROOT/'exports'
+        archive_dir.mkdir(parents=True,exist_ok=True)
+        with tempfile.NamedTemporaryFile(dir=archive_dir,suffix='.zip',delete=False) as temp:
+            path=Path(temp.name)
+        try:
+            with ZipFile(path,'w',compression=ZIP_STORED,allowZip64=True) as archive:
+                for i,c in enumerate(items,1):
+                    archive.write(c.output_path,arcname=f'CLIPRA_{i:02d}_{c.id[:8]}.mp4')
+            return FileResponse(path,media_type='application/zip',
+                    filename=f'CLIPRA_{id[:8]}_clips.zip',
+                    background=BackgroundTask(lambda:path.unlink(missing_ok=True)))
+        except Exception:
+            path.unlink(missing_ok=True)
+            raise
+
 @app.post('/api/clips/{id}/render',status_code=202)
 def request_render(id:str,req:Request,user=Depends(auth)):
     check_origin(req)

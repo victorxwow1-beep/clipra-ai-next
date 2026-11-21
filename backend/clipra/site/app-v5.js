@@ -61,7 +61,7 @@ function home(){
  '<label class="setting"><b>Video framing</b>'+choices('mode',[['fit','Fit · keep full picture'],['fill','Fill · crop edges']],state.mode)+'</label></div></details>'+
  '<button class="primary full big" data-action="find" '+(state.busy?'disabled':'')+'>'+ (state.busy?'Working…':'✦ Find Best Clips')+'</button>'+
  upload+status+(state.busy?loading():'')+
- '<p class="smallprint">Free local analysis checks evidence in the real source. Spoken clips use open-source Whisper; gaming uses on-screen evidence. Full visual AI is not verified on this host, so we will not invent highlights.</p>'+
+ '<p class="smallprint">Free local analysis checks evidence in the real source. Spoken clips use open-source Whisper; gaming uses on-screen evidence. Full visual AI is not verified on this host, so we will not invent highlights. This free server has temporary storage: keep your original recording and download finished clips before a restart.</p>'+
  '</section>'+
  '<section class="previous"><div class="rowhead"><h2>Your videos</h2><span>'+state.media.length+'</span></div>'+
  (recent||'<p class="hint">Your imported videos will appear here.</p>')+'</section>');

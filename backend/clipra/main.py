@@ -53,6 +53,10 @@ class UploadCreate(BaseModel):
     size:int=Field(gt=0)
     sha256:str|None=None
     rights_confirmed:bool
+class SuggestRequest(BaseModel):
+    max_clips:int=Field(default=4,ge=1,le=12)
+    length_seconds:float=Field(default=22.0,ge=8.0,le=60.0)
+
 class AnalyzeRequest(BaseModel):
     category:Literal['auto','gaming','podcast','livestream','education','drama','general']='auto'
     max_clips:int=Field(default=3,ge=1,le=12)
@@ -120,7 +124,7 @@ def logout(response:Response,req:Request,user=Depends(auth)):
 def me(user=Depends(auth)):return {'user':'owner'}
 @app.get('/api/providers')
 def providers(user=Depends(auth)):
-    return {'gemini':{'configured':bool(os.getenv('GEMINI_API_KEY')),'outbound_enabled':os.getenv('ALLOW_EXTERNAL_AI')=='true',
+    return {'free_local':{'configured':True,'video_ai':False,'selection':'audio_visual_activity_drafts'},'gemini':{'configured':bool(os.getenv('GEMINI_API_KEY')),'outbound_enabled':os.getenv('ALLOW_EXTERNAL_AI')=='true',
             'model':os.getenv('GEMINI_VIDEO_MODEL','gemini-3.5-flash'),'video_verification':'not_verified_until_real_request'},
             'aggregate':{'configured':bool(os.getenv('AGGREGATOR_API_KEY')),'provider':os.getenv('AGGREGATOR_PROVIDER','unknown'),
              'video_verification':'not_implemented'},
@@ -204,7 +208,7 @@ def complete_upload(id:str,req:Request,user=Depends(auth)):
 def list_media(user=Depends(auth)):
     with Session() as s:
         return [{'id':m.id,'filename':m.filename,'duration':m.duration,'width':m.width,'height':m.height,'size':m.size}
-                for m in s.scalars(select(Media).order_by(Media.created_at.desc()).limit(50))]
+                for m in s.scalars(select(Media).where(Media.duration>0).order_by(Media.created_at.desc()).limit(50))]
 @app.get('/api/media/{id}')
 def media_details(id:str,user=Depends(auth)):
     with Session() as s:
@@ -217,6 +221,23 @@ def stream_media(id:str,user=Depends(auth)):
         m=get_media(s,id)
         mt={'.mov':'video/quicktime','.webm':'video/webm','.mkv':'video/x-matroska','.avi':'video/x-msvideo'}.get(Path(m.filename).suffix.lower(),'video/mp4')
         return FileResponse(m.source_path,media_type=mt,filename=m.filename,content_disposition_type='inline')
+
+@app.post('/api/media/{id}/suggest',status_code=202)
+def suggest_free_clips(id:str,body:SuggestRequest,req:Request,user=Depends(auth)):
+    """Queue free on-server audio/visual drafts. Never bills AI tokens."""
+    check_origin(req)
+    with Session() as s:
+        m=get_media(s,id)
+        if m.duration<=0 or not Path(m.source_path).exists():
+            raise HTTPException(409,'Original source is not available')
+        active=s.scalar(select(Job).where(Job.media_id==id,Job.kind=='suggest',
+                       Job.status.in_(['queued','running'])).limit(1))
+        if active:return job_view(active)
+        j=Job(kind='suggest',media_id=id,settings={
+            'max_clips':body.max_clips,'clip_length':body.length_seconds,
+            'selection':'local_audiovisual_drafts_not_semantic_ai'})
+        s.add(j);s.commit()
+        return job_view(j)
 
 @app.post('/api/media/{id}/analyze',status_code=202)
 def analyze(id:str,body:AnalyzeRequest,req:Request,user=Depends(auth)):
@@ -324,6 +345,28 @@ def youtube(body:YoutubeRequest,req:Request,user=Depends(auth)):
             'status':'requires_authorized_original','media_bytes_available':False,
             'ai_url_understanding':'documented_preview_provider_capability_not_verified_on_this_account',
             'message':'Google documents YouTube URL video understanding, but it does not supply MP4 source bytes. Attach a creator-owned original to export actual clips.'}
+
+@app.post('/api/youtube/import',status_code=202)
+def import_authorized_youtube(body:YoutubeLinkRequest,req:Request,user=Depends(auth)):
+    check_origin(req)
+    if not body.rights_confirmed:
+        raise HTTPException(400,'Confirm you own or can process this YouTube recording')
+    video_id,canonical=youtube_reference(body.url)
+    with Session() as s:
+        active=s.scalar(select(Job).where(Job.kind=='youtube_import',
+                      Job.status.in_(['queued','running'])).limit(1))
+        if active:
+            raise HTTPException(409,'A YouTube import is already in progress')
+        # New media is deliberately hidden from the library until validated.
+        media=Media(filename=f'YouTube {video_id} (importing)',source_path='',
+                    sha256='',size=0,duration=0,width=0,height=0,fps=0,
+                    has_audio=False,youtube_url=canonical)
+        s.add(media);s.flush()
+        j=Job(kind='youtube_import',media_id=media.id,settings={
+            'video_id':video_id,'rights_confirmed':True,
+            'source':'public_youtube_or_bounded_live'})
+        s.add(j);s.commit()
+        return job_view(j)
 
 @app.post('/api/media/{id}/youtube')
 def associate_youtube(id:str,body:YoutubeLinkRequest,req:Request,user=Depends(auth)):

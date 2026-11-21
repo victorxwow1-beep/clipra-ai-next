@@ -14,6 +14,7 @@ from .ai import analyze_video, AIUnavailable
 from .signals import discover_signals
 from .freecuts import propose_drafts
 from .semantic_evidence import analyze_hud_video
+from .local_speech import transcribe_local, LocalSpeechUnavailable
 from .youtube_source import download_authorized_youtube, YouTubeImportError
 from .render import render_clip,RenderCancelled
 
@@ -27,7 +28,7 @@ def run_one(job_id):
             job.status='cancelled';s.commit();return
         media=s.get(Media,job.media_id)
         clip=s.get(Clip,job.clip_id) if job.clip_id else None
-        job.stage={'analyze':'analyzing audiovisual content','suggest':'scanning original locally','evidence':'checking actual source frames for on-screen event evidence','youtube_import':'importing authorized YouTube source','render':'encoding original video'}.get(job.kind,'starting')
+        job.stage={'analyze':'analyzing audiovisual content','suggest':'scanning original locally','evidence':'checking actual source frames for on-screen event evidence','smart':'analyzing real source evidence (no paid API)','youtube_import':'importing authorized YouTube source','render':'encoding original video'}.get(job.kind,'starting')
         job.heartbeat=datetime.now(timezone.utc);s.commit()
         try:
             if job.kind=='analyze':
@@ -75,6 +76,56 @@ def run_one(job_id):
                         options={"ratio":"9:16","mode":"fit","crf":18}))
                 job.settings={**settings,"candidate_count":len(findings),"evidence":summary,
                               "selection":"visible_hud_text_not_full_event_recognition"}
+            elif job.kind=='smart':
+                settings=job.settings or {}
+                category=settings.get('category','auto')
+                max_clips=int(settings.get('max_clips',5))
+                clip_length=float(settings.get('clip_length',24))
+                source=Path(media.source_path)
+                if not source.is_file():
+                    raise ValueError('Original source missing; please upload again')
+                found=[]
+                analyses=[]
+                if category in ('gaming','auto','livestream'):
+                    if media.duration>float(os.getenv('MAX_LOCAL_EVIDENCE_SECONDS','3600')):
+                        raise LocalSpeechUnavailable('Free gameplay scan supports up to 60 minutes currently; no unverified highlights were produced')
+                    cues=discover_signals(source, media.duration,max_events=64)
+                    ocr,details=analyze_hud_video(source,media.duration,cues,
+                                max_clips=max_clips,clip_length=min(60,clip_length),
+                                max_frames=int(os.getenv('MAX_LOCAL_EVIDENCE_FRAMES','45')))
+                    found.extend(ocr);analyses.append(details)
+                # Spoken content requires actual local speech recognition (MIT-licensed
+                # faster-whisper). It is not fabricated from motion or screen text.
+                if category in ('podcast','education','livestream') or (category=='auto' and not found):
+                    speech,details=transcribe_local(source,media.duration,max_clips=max_clips,
+                                             clip_length=clip_length,category=category)
+                    found.extend(speech);analyses.append(details)
+                if category=='funny':
+                    raise LocalSpeechUnavailable(
+                        'Reliable funny-moment recognition needs a configured video-capable open-source vision model. '
+                        'This server has no verified model runtime; refusing to invent highlights.')
+                accepted=[]
+                for item in found:
+                    if any(max(0,min(item['end'],p['end'])-max(item['start'],p['start']))
+                           > .4*min(item['end']-item['start'],p['end']-p['start'])
+                           for p in accepted):
+                        continue
+                    accepted.append(item)
+                    if len(accepted)>=max_clips:break
+                for item in accepted:
+                    s.add(Clip(
+                        media_id=media.id,title=item['title'],
+                        segments=[{'start':item['start'],'end':item['end']}],
+                        origin=item['origin'],confidence=None,
+                        reasoning=item['reason'],
+                        options={
+                            'ratio':settings.get('ratio','9:16'),
+                            'mode':settings.get('mode','fit'),
+                            'crf':int(settings.get('crf',18))}))
+                job.settings={**settings,'candidate_count':len(accepted),
+                    'analyses':analyses,'analysis_scope':'verified_visible_HUD_or_real_speech_only',
+                    'multimodal_vision_model':'not_configured',
+                    'note':'Clip quality requires human review; no fake semantic certainty.'}
             elif job.kind=='youtube_import':
                 settings=job.settings or {}
                 if not settings.get('rights_confirmed'):
@@ -123,7 +174,7 @@ def run_one(job_id):
         except Exception as e:
             s.rollback()
             job=s.get(Job,job_id)
-            job.status='blocked' if isinstance(e,(AIUnavailable,YouTubeImportError)) else 'failed'
+            job.status='blocked' if isinstance(e,(AIUnavailable,YouTubeImportError,LocalSpeechUnavailable)) else 'failed'
             job.error=str(e)[:1000]
             job.stage='blocked' if job.status=='blocked' else 'failed'
             s.commit()

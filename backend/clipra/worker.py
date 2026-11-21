@@ -13,6 +13,7 @@ from .models import Job,Media,Clip
 from .ai import analyze_video, AIUnavailable
 from .signals import discover_signals
 from .freecuts import propose_drafts
+from .semantic_evidence import analyze_hud_video
 from .youtube_source import download_authorized_youtube, YouTubeImportError
 from .render import render_clip,RenderCancelled
 
@@ -26,7 +27,7 @@ def run_one(job_id):
             job.status='cancelled';s.commit();return
         media=s.get(Media,job.media_id)
         clip=s.get(Clip,job.clip_id) if job.clip_id else None
-        job.stage={'analyze':'analyzing audiovisual content','suggest':'scanning original locally','youtube_import':'importing authorized YouTube source','render':'encoding original video'}.get(job.kind,'starting')
+        job.stage={'analyze':'analyzing audiovisual content','suggest':'scanning original locally','evidence':'checking actual source frames for on-screen event evidence','youtube_import':'importing authorized YouTube source','render':'encoding original video'}.get(job.kind,'starting')
         job.heartbeat=datetime.now(timezone.utc);s.commit()
         try:
             if job.kind=='analyze':
@@ -55,6 +56,25 @@ def run_one(job_id):
                         options={'ratio':'9:16','mode':'fit','crf':20},
                     ))
                 job.settings={**settings,'candidate_count':len(suggestions),'selection':'local_audiovisual_drafts_not_semantic_ai'}
+            elif job.kind=='evidence':
+                settings=job.settings or {}
+                if media.duration > float(os.getenv("MAX_LOCAL_EVIDENCE_SECONDS","3600")):
+                    raise ValueError("Source exceeds the 60-minute free evidence scan limit. Split it before analysis.")
+                cues=discover_signals(Path(media.source_path),media.duration,max_events=64)
+                findings,summary=analyze_hud_video(
+                    Path(media.source_path),media.duration,cues,
+                    max_clips=int(settings.get("max_clips",4)),
+                    clip_length=float(settings.get("clip_length",22)),
+                    max_frames=int(os.getenv("MAX_LOCAL_EVIDENCE_FRAMES","45")))
+                for item in findings:
+                    s.add(Clip(
+                        media_id=media.id,title=item["title"],
+                        segments=[{"start":item["start"],"end":item["end"]}],
+                        origin="local_text_evidence",reasoning=item["reason"],
+                        confidence=None,
+                        options={"ratio":"9:16","mode":"fit","crf":18}))
+                job.settings={**settings,"candidate_count":len(findings),"evidence":summary,
+                              "selection":"visible_hud_text_not_full_event_recognition"}
             elif job.kind=='youtube_import':
                 settings=job.settings or {}
                 if not settings.get('rights_confirmed'):

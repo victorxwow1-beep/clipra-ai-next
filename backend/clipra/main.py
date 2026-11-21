@@ -53,6 +53,10 @@ class UploadCreate(BaseModel):
     size:int=Field(gt=0)
     sha256:str|None=None
     rights_confirmed:bool
+class EvidenceRequest(BaseModel):
+    max_clips:int=Field(default=4,ge=1,le=12)
+    length_seconds:float=Field(default=22.0,ge=10.0,le=60.0)
+
 class SuggestRequest(BaseModel):
     max_clips:int=Field(default=4,ge=1,le=12)
     length_seconds:float=Field(default=22.0,ge=8.0,le=60.0)
@@ -124,7 +128,7 @@ def logout(response:Response,req:Request,user=Depends(auth)):
 def me(user=Depends(auth)):return {'user':'owner'}
 @app.get('/api/providers')
 def providers(user=Depends(auth)):
-    return {'free_local':{'configured':True,'video_ai':False,'selection':'audio_visual_activity_drafts'},'gemini':{'configured':bool(os.getenv('GEMINI_API_KEY')),'outbound_enabled':os.getenv('ALLOW_EXTERNAL_AI')=='true',
+    return {'free_local':{'configured':True,'video_ai':False,'selection':'audio_visual_activity_drafts'},'local_evidence':{'configured':True,'video_ai':False,'engine':'ffmpeg_tesseract_hud_ocr','scope':'visible_hud_text_only'},'gemini':{'configured':bool(os.getenv('GEMINI_API_KEY')),'outbound_enabled':os.getenv('ALLOW_EXTERNAL_AI')=='true',
             'model':os.getenv('GEMINI_VIDEO_MODEL','gemini-3.5-flash'),'video_verification':'not_verified_until_real_request'},
             'aggregate':{'configured':bool(os.getenv('AGGREGATOR_API_KEY')),'provider':os.getenv('AGGREGATOR_PROVIDER','unknown'),
              'video_verification':'not_implemented'},
@@ -221,6 +225,26 @@ def stream_media(id:str,user=Depends(auth)):
         m=get_media(s,id)
         mt={'.mov':'video/quicktime','.webm':'video/webm','.mkv':'video/x-matroska','.avi':'video/x-msvideo'}.get(Path(m.filename).suffix.lower(),'video/mp4')
         return FileResponse(m.source_path,media_type=mt,filename=m.filename,content_disposition_type='inline')
+
+@app.post('/api/media/{id}/evidence',status_code=202)
+def find_visible_game_events(id:str,body:EvidenceRequest,req:Request,user=Depends(auth)):
+    """Strictly source-evidenced free local HUD text detection; zero clips is valid."""
+    check_origin(req)
+    with Session() as s:
+        m=get_media(s,id)
+        if m.duration<=0 or not Path(m.source_path).exists():
+            raise HTTPException(409,'Original source is not available')
+        max_seconds=float(os.getenv('MAX_LOCAL_EVIDENCE_SECONDS','3600'))
+        if m.duration>max_seconds:
+            raise HTTPException(422,f'This free scan currently supports up to {int(max_seconds//60)} minutes; split longer material first')
+        active=s.scalar(select(Job).where(Job.media_id==id,Job.kind=='evidence',
+                       Job.status.in_(['queued','running'])).limit(1))
+        if active:return job_view(active)
+        j=Job(kind='evidence',media_id=id,settings={
+            'max_clips':body.max_clips,'clip_length':body.length_seconds,
+            'selection':'visible_hud_text_only_not_full_video_understanding'})
+        s.add(j);s.commit()
+        return job_view(j)
 
 @app.post('/api/media/{id}/suggest',status_code=202)
 def suggest_free_clips(id:str,body:SuggestRequest,req:Request,user=Depends(auth)):

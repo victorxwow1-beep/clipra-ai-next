@@ -4,6 +4,7 @@ import hmac
 import fcntl
 import hashlib
 import tempfile
+import subprocess
 from zipfile import ZipFile, ZIP_STORED
 from starlette.background import BackgroundTask
 from importlib.util import find_spec
@@ -339,6 +340,8 @@ def update_clip(id:str,body:ClipRequest,req:Request,user=Depends(auth)):
         try:validate_segments(segments,m.duration)
         except ValueError as e:raise HTTPException(422,str(e))
         if c.output_path and Path(c.output_path).exists():Path(c.output_path).unlink()
+        for thumb in (ROOT/'previews').glob(f'{id}-*.jpg'):
+            thumb.unlink(missing_ok=True)
         c.title=body.title;c.segments=segments;c.output_path=None;c.options={'ratio':body.ratio,'mode':body.mode,'crf':body.crf}
         s.commit();return clip_view(c)
 @app.delete('/api/clips/{id}',status_code=204)
@@ -355,6 +358,8 @@ def reject_clip(id:str,req:Request,user=Depends(auth)):
             j.clip_id=None
         output=Path(c.output_path) if c.output_path else None
         s.delete(c);s.commit()
+        for thumb in (ROOT/'previews').glob(f'{id}-*.jpg'):
+            thumb.unlink(missing_ok=True)
         if output and output.is_relative_to(ROOT/'exports'):
             output.unlink(missing_ok=True)
         return Response(status_code=204)
@@ -383,6 +388,40 @@ def download_all_clips(id:str,user=Depends(auth)):
         except Exception:
             path.unlink(missing_ok=True)
             raise
+
+@app.get('/api/clips/{id}/thumbnail')
+def clip_thumbnail(id:str,user=Depends(auth)):
+    """Actual frame from the owned original before a clip is rendered.
+
+    Protected by workspace authentication; no placeholder/stock images.
+    """
+    with Session() as s:
+        c=get_clip(s,id)
+        m=get_media(s,c.media_id)
+        source=Path(m.source_path)
+        if not source.is_file():
+            raise HTTPException(409,'The original video was lost after a host restart. Please import again.')
+        span=c.segments[0]
+        start=float(span['start'])
+        sample=min(m.duration-.05,start+min(2.0,(float(span['end'])-start)*.25))
+        thumbnails=ROOT/'previews'
+        thumbnails.mkdir(parents=True,exist_ok=True)
+        dest=thumbnails/f'{id}-{round(start*1000)}.jpg'
+        if not dest.is_file():
+            try:
+                result=subprocess.run([
+                    'ffmpeg','-hide_banner','-loglevel','error','-nostdin','-y',
+                    '-ss',f'{max(0,sample):.3f}','-i',str(source),'-frames:v','1',
+                    '-vf','scale=640:360:force_original_aspect_ratio=decrease',
+                    '-q:v','4',str(dest)],
+                    stdout=subprocess.DEVNULL,stderr=subprocess.PIPE,timeout=20,
+                    check=False)
+            except subprocess.TimeoutExpired:
+                raise HTTPException(503,'Video thumbnail extraction timed out')
+            if result.returncode or not dest.is_file() or dest.stat().st_size<100:
+                dest.unlink(missing_ok=True)
+                raise HTTPException(422,'Could not decode a source frame for this clip')
+        return FileResponse(dest,media_type='image/jpeg')
 
 @app.post('/api/clips/{id}/render',status_code=202)
 def request_render(id:str,req:Request,user=Depends(auth)):

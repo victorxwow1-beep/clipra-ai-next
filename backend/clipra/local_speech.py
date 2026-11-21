@@ -106,6 +106,7 @@ def transcribe_local(source: Path, duration: float, *,
     try:
         model=WhisperModel(name, device="cpu", compute_type="int8",
                            download_root=os.getenv("WHISPER_CACHE_DIR") or None,
+                           local_files_only=os.getenv("WHISPER_OFFLINE","false").lower()=="true",
                            cpu_threads=max(1,min(int(os.getenv("WHISPER_CPU_THREADS","2")),4)))
         it,info=model.transcribe(str(source),beam_size=2,
                                   vad_filter=True, condition_on_previous_text=False)

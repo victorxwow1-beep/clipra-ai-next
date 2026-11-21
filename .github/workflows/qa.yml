@@ -16,10 +16,13 @@ jobs:
       - name: Install media decoder and backend dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg tesseract-ocr
+          sudo apt-get install -y ffmpeg tesseract-ocr espeak-ng
           python -m pip install -r backend/requirements.txt 'alembic>=1.14,<2'
       - name: Real FFmpeg tests, resumable upload, Gemini mocked protocol
         run: PYTHONPATH=backend python -m pytest backend/tests -q
+      - name: Actual open-source Whisper model speech inference + offline reload
+        timeout-minutes: 9
+        run: RUN_REAL_WHISPER_TEST=1 PYTHONPATH=backend python -m pytest backend/tests/test_real_whisper_weights.py -q -s
       - name: Check no private secrets committed
         run: |
           if git ls-files | grep -E '(^|/)(\.env|id_rsa|service-account\.json)$'; then

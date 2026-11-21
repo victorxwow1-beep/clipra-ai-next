@@ -11,3 +11,8 @@ numpy>=2.0,<3
 yt-dlp>=2025.1,<2028
 # MIT-licensed on-device speech recognition; models use CPU INT8 (no paid AI API).
 faster-whisper>=1.1,<2
+# BSD-3 scene boundary detection (actual local video frames, not a paid API).
+scenedetect>=0.6.7,<0.8
+# PySceneDetect pulls OpenCV; regular Python OpenCV needs libGL at runtime.
+# faster-whisper 1.2.x calls av.open(metadata_errors=...), removed by PyAV 19.
+av>=11,<19

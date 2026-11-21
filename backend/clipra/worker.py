@@ -15,6 +15,7 @@ from .signals import discover_signals
 from .freecuts import propose_drafts
 from .semantic_evidence import analyze_hud_video
 from .local_speech import transcribe_local, LocalSpeechUnavailable
+from .scene_context import refine_scene_boundaries
 from .youtube_source import download_authorized_youtube, YouTubeImportError
 from .render import render_clip,RenderCancelled
 
@@ -122,6 +123,7 @@ def run_one(job_id):
                         continue
                     accepted.append(item)
                     if len(accepted)>=max_clips:break
+                accepted=refine_scene_boundaries(source,media.duration,accepted)
                 existing=list(s.scalars(select(Clip).where(
                     Clip.media_id==media.id,
                     Clip.origin.in_(['local_text_evidence','local_speech']))))
@@ -139,7 +141,7 @@ def run_one(job_id):
                         media_id=media.id,title=item['title'],
                         segments=[{'start':item['start'],'end':item['end']}],
                         origin=item['origin'],confidence=None,
-                        reasoning=item['reason'],
+                        reasoning=item['reason']+(' | Scene boundaries: '+item['scene_check'] if item.get('scene_check') else ''),
                         options={
                             'ratio':settings.get('ratio','9:16'),
                             'mode':settings.get('mode','fit'),

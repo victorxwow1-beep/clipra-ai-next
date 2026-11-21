@@ -1,0 +1,41 @@
+name: CLIPRA mobile browser QA
+on:
+  push:
+    branches:
+      - feature/clipra-simplified-studio-v5
+      - main
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'scripts/qa_mobile_browser.py'
+      - '.github/workflows/mobile-qa.yml'
+      - 'deploy/**'
+      - 'Dockerfile'
+permissions:
+  contents: read
+jobs:
+  mobile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install real video tools and open-source backend
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg tesseract-ocr
+          python -m pip install -r backend/requirements.txt 'alembic>=1.14,<2' 'playwright>=1.50,<2'
+      - name: Install Android-like Chromium and iPhone-like WebKit browsers
+        run: python -m playwright install --with-deps chromium webkit
+      - name: Actual upload, OCR, MP4, ZIP and mobile interface checks
+        run: PYTHONPATH=backend python scripts/qa_mobile_browser.py
+      - name: Keep browser test evidence for inspection
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clipra-mobile-browser-qa
+          path: qa-browser-artifacts/
+          if-no-files-found: ignore
+          retention-days: 7

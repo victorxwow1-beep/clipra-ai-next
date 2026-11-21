@@ -16,7 +16,7 @@ jobs:
       - name: Install media decoder and backend dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg tesseract-ocr
           python -m pip install -r backend/requirements.txt 'alembic>=1.14,<2'
       - name: Real FFmpeg tests, resumable upload, Gemini mocked protocol
         run: PYTHONPATH=backend python -m pytest backend/tests -q

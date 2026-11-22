@@ -56,7 +56,7 @@ jobs:
 
           record('FastAPI health', base + '/health', lambda s, b: s == 200 and json.loads(b).get('status') == 'ok' and json.loads(b).get('service') == 'clipra-next-api')
           record('FastAPI readiness', base + '/ready', lambda s, b: s == 200 and json.loads(b).get('ready') is True and json.loads(b).get('database') == 'ok')
-          record('Protected sign-in surface', base + '/', lambda s, b: s == 200 and 'CLIPRA' in b and 'password' in b.lower())
+          record('CLIPRA SPA bootstrap surface', base + '/', lambda s, b: s == 200 and 'CLIPRA' in b and 'id="app"' in b and '<script' in b)
           record('Higgsfield public landing', landing + '/', lambda s, b: s == 200 and 'CLIPRA' in b)
           evidence['result'] = 'FAIL' if failed else 'PASS_PUBLIC_SURFACE_ONLY'
           with open('clipra-live-smoke-evidence.json', 'w', encoding='utf-8') as f:

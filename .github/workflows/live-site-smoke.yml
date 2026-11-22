@@ -1,0 +1,74 @@
+name: CLIPRA live site smoke QA
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 10:15 AM Pakistan Standard Time; schedule may be delayed by GitHub.
+    - cron: '15 5 * * *'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: clipra-live-smoke
+  cancel-in-progress: false
+
+jobs:
+  public-surface:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Validate live API, public access and authentication barrier
+        env:
+          CLIPRA_BASE: https://clipra-studio-production.up.railway.app
+          CLIPRA_LANDING: https://clipra-studio.higgsfield.app
+        run: |
+          python3 - <<'PY'
+          import json, os, sys, time
+          from urllib.request import Request, urlopen
+          from urllib.error import HTTPError, URLError
+
+          base = os.environ['CLIPRA_BASE']
+          landing = os.environ['CLIPRA_LANDING']
+          evidence = {'test': 'unauthenticated-live-smoke', 'timestamp_unix': int(time.time()), 'checks': [], 'limits': [
+              'Does not sign in or test upload/render/export',
+              'Does not certify physical mobile Safari, durable storage or AI model quality'
+          ]}
+          failed = False
+
+          def get(url):
+              req = Request(url, headers={'User-Agent': 'CLIPRA-QA-GitHub-Actions/1.0', 'Accept': '*/*'})
+              with urlopen(req, timeout=22) as res:
+                  return res.status, res.geturl(), res.read(100000).decode('utf-8', 'replace')
+
+          def record(name, url, predicate):
+              global failed
+              entry = {'name': name, 'url': url}
+              try:
+                  status, final_url, body = get(url)
+                  entry.update({'status': status, 'final_url': final_url, 'pass': bool(predicate(status, body))})
+                  if not entry['pass']: entry['error'] = 'Unexpected HTTP status or response content'
+              except Exception as exc:
+                  entry.update({'pass': False, 'error': str(exc)[:250]})
+              evidence['checks'].append(entry)
+              print(('PASS' if entry['pass'] else 'FAIL'), name, entry.get('status', 'no-response'), entry.get('error', ''))
+              if not entry['pass']: failed = True
+
+          record('FastAPI health', base + '/health', lambda s, b: s == 200 and json.loads(b).get('status') == 'ok' and json.loads(b).get('service') == 'clipra-next-api')
+          record('FastAPI readiness', base + '/ready', lambda s, b: s == 200 and json.loads(b).get('ready') is True and json.loads(b).get('database') == 'ok')
+          record('Protected sign-in surface', base + '/', lambda s, b: s == 200 and 'CLIPRA' in b and 'password' in b.lower())
+          record('Higgsfield public landing', landing + '/', lambda s, b: s == 200 and 'CLIPRA' in b)
+          evidence['result'] = 'FAIL' if failed else 'PASS_PUBLIC_SURFACE_ONLY'
+          with open('clipra-live-smoke-evidence.json', 'w', encoding='utf-8') as f:
+              json.dump(evidence, f, indent=2)
+          print('RESULT:', evidence['result'])
+          sys.exit(1 if failed else 0)
+          PY
+      - name: Preserve smoke-test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clipra-live-site-smoke
+          path: clipra-live-smoke-evidence.json
+          if-no-files-found: ignore
+          retention-days: 7
